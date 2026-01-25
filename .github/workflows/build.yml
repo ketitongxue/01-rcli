@@ -3,12 +3,12 @@ name: build
 on:
   push:
     branches:
-      - master
+      - main
     tags:
       - v*
   pull_request:
     branches:
-      - master
+      - main
 
 permissions:
   contents: write
@@ -21,9 +21,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
       - name: Install Rust
         run: rustup toolchain install stable --component llvm-tools-preview
       - name: Install cargo-llvm-cov
