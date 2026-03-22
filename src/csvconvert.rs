@@ -31,7 +31,7 @@ pub fn process_csv(opts: &CsvOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_delimiter(delimiter: &str) -> anyhow::Result<u8> {
+pub(crate) fn parse_delimiter(delimiter: &str) -> anyhow::Result<u8> {
     let mut chars = delimiter.chars();
     let Some(ch) = chars.next() else {
         bail!("delimiter cannot be empty");
@@ -45,7 +45,7 @@ fn parse_delimiter(delimiter: &str) -> anyhow::Result<u8> {
     Ok(ch as u8)
 }
 
-fn resolve_output_format(
+pub(crate) fn resolve_output_format(
     format: Option<OutputFormat>,
     output: &str,
 ) -> anyhow::Result<OutputFormat> {
@@ -70,7 +70,7 @@ fn resolve_output_format(
     }
 }
 
-fn record_to_map(
+pub(crate) fn record_to_map(
     headers: Option<&StringRecord>,
     record: &StringRecord,
 ) -> BTreeMap<String, String> {
@@ -88,7 +88,7 @@ fn record_to_map(
     }
 }
 
-fn serialize_records(
+pub(crate) fn serialize_records(
     records: &[BTreeMap<String, String>],
     format: OutputFormat,
 ) -> anyhow::Result<String> {
