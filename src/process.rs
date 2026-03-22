@@ -108,3 +108,50 @@ fn serialize_records(
 struct TomlRecords<'a> {
     records: &'a [BTreeMap<String, String>],
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_delimiter, record_to_map, resolve_output_format, serialize_records};
+    use crate::OutputFormat;
+    use csv::StringRecord;
+
+    #[test]
+    fn infers_format_from_extension() {
+        assert_eq!(
+            resolve_output_format(None, "output.yaml").unwrap(),
+            OutputFormat::Yaml
+        );
+        assert_eq!(
+            resolve_output_format(None, "output.toml").unwrap(),
+            OutputFormat::Toml
+        );
+        assert_eq!(
+            resolve_output_format(None, "output").unwrap(),
+            OutputFormat::Json
+        );
+    }
+
+    #[test]
+    fn uses_generated_columns_without_headers() {
+        let record = StringRecord::from(vec!["Alice", "7"]);
+        let mapped = record_to_map(None, &record);
+
+        assert_eq!(mapped.get("column1").unwrap(), "Alice");
+        assert_eq!(mapped.get("column2").unwrap(), "7");
+    }
+
+    #[test]
+    fn serializes_toml_with_records_root_key() {
+        let record = StringRecord::from(vec!["Alice", "7"]);
+        let records = vec![record_to_map(None, &record)];
+        let content = serialize_records(&records, OutputFormat::Toml).unwrap();
+
+        assert!(content.contains("[[records]]"));
+        assert!(content.contains("column1 = \"Alice\""));
+    }
+
+    #[test]
+    fn rejects_invalid_delimiter() {
+        assert!(parse_delimiter("::").is_err());
+    }
+}
