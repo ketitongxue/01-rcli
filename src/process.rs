@@ -1,20 +1,110 @@
-use csv::{Reader, StringRecord};
+use crate::{CsvOpts, OutputFormat};
+use anyhow::{bail, Context};
+use csv::{ReaderBuilder, StringRecord};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 
-pub fn process_csv(input: &str, output: &str) -> anyhow::Result<()> {
-    let mut rdr = Reader::from_path(input)?;
-    let mut ret = Vec::with_capacity(128);
-    let headers = rdr.headers()?.clone();
+pub fn process_csv(opts: &CsvOpts) -> anyhow::Result<()> {
+    let delimiter = parse_delimiter(&opts.delimiter)?;
+    let format = resolve_output_format(opts.format, &opts.output)?;
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(delimiter)
+        .has_headers(opts.header)
+        .from_path(&opts.input)?;
+    let mut records = Vec::with_capacity(128);
+    let headers = if opts.header {
+        Some(rdr.headers()?.clone())
+    } else {
+        None
+    };
+
     for result in rdr.records() {
-        let record: StringRecord = result?;
-        let json_value = headers
-            .iter()
-            .zip(record.iter())
-            .collect::<serde_json::Value>();
-        ret.push(json_value)
+        let record = result?;
+        let mapped = record_to_map(headers.as_ref(), &record);
+        records.push(mapped);
     }
 
-    let json = serde_json::to_string_pretty(&ret)?;
-    fs::write(output, json)?;
+    let content = serialize_records(&records, format)?;
+    fs::write(&opts.output, content)?;
     Ok(())
+}
+
+fn parse_delimiter(delimiter: &str) -> anyhow::Result<u8> {
+    let mut chars = delimiter.chars();
+    let Some(ch) = chars.next() else {
+        bail!("delimiter cannot be empty");
+    };
+    if chars.next().is_some() {
+        bail!("delimiter must be a single character");
+    }
+    if !ch.is_ascii() {
+        bail!("delimiter must be an ASCII character");
+    }
+    Ok(ch as u8)
+}
+
+fn resolve_output_format(
+    format: Option<OutputFormat>,
+    output: &str,
+) -> anyhow::Result<OutputFormat> {
+    if let Some(format) = format {
+        return Ok(format);
+    }
+
+    match Path::new(output)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("json") => Ok(OutputFormat::Json),
+        Some("yaml" | "yml") => Ok(OutputFormat::Yaml),
+        Some("toml") => Ok(OutputFormat::Toml),
+        Some(ext) => bail!(
+            "unsupported output extension '.{}'; use --format json|yaml|toml",
+            ext
+        ),
+        None => Ok(OutputFormat::Json),
+    }
+}
+
+fn record_to_map(
+    headers: Option<&StringRecord>,
+    record: &StringRecord,
+) -> BTreeMap<String, String> {
+    match headers {
+        Some(headers) => headers
+            .iter()
+            .zip(record.iter())
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect(),
+        None => record
+            .iter()
+            .enumerate()
+            .map(|(index, value)| (format!("column{}", index + 1), value.to_string()))
+            .collect(),
+    }
+}
+
+fn serialize_records(
+    records: &[BTreeMap<String, String>],
+    format: OutputFormat,
+) -> anyhow::Result<String> {
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(records).context("failed to serialize records as JSON")
+        }
+        OutputFormat::Yaml => {
+            serde_yaml::to_string(records).context("failed to serialize records as YAML")
+        }
+        OutputFormat::Toml => toml::to_string_pretty(&TomlRecords { records })
+            .context("failed to serialize records as TOML"),
+    }
+}
+
+#[derive(Serialize)]
+struct TomlRecords<'a> {
+    records: &'a [BTreeMap<String, String>],
 }
